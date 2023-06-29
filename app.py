@@ -247,7 +247,6 @@ def calc_landmark_list(image, landmarks):
     for _, landmark in enumerate(landmarks.landmark):
         landmark_x = min(int(landmark.x * image_width), image_width - 1)
         landmark_y = min(int(landmark.y * image_height), image_height - 1)
-        # landmark_z = landmark.z
 
         landmark_point.append([landmark_x, landmark_y])
 
@@ -270,7 +269,6 @@ def calc_finger_distance(landmarks, brect, f1, f2):
 
 def calc_finger_up(landmarks, f1, f2):
     y1, y2 = landmarks[f1][1], landmarks[f2][1]
-    # pos = self.getPosition(img, (14,16), draw=False)
     try:
         if y1 >= y2:
             return True
