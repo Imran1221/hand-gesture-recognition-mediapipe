@@ -9,12 +9,13 @@ from collections import deque
 import random
 import re
 import time
+import math
 
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
+from ultralytics import YOLO
 from requests import post
-import math
 
 from utils import CvFpsCalc
 from model import KeyPointClassifier
@@ -66,6 +67,7 @@ def main():
     cap.set(cv.CAP_PROP_FRAME_HEIGHT, cap_height)
 
     # Model load #############################################################
+    model = YOLO('yolov8n.pt') 
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(
         static_image_mode=use_static_image_mode,
@@ -73,7 +75,6 @@ def main():
         min_detection_confidence=min_detection_confidence,
         min_tracking_confidence=min_tracking_confidence,
     )
-
     keypoint_classifier = KeyPointClassifier()
 
     # Read labels ###########################################################
@@ -113,6 +114,8 @@ def main():
         # Detection implementation #############################################################
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
         image.flags.writeable = False
+        results = model.predict(source=image, classes=0)
+        print(results)
         hand_results = hands.process(image)
         image.flags.writeable = True
 
