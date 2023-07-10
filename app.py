@@ -19,6 +19,7 @@ from requests import post
 
 from utils import CvFpsCalc
 from model import KeyPointClassifier
+from ultralytics.yolo.utils.plotting import Annotator
 
 
 def get_args():
@@ -67,7 +68,7 @@ def main():
     cap.set(cv.CAP_PROP_FRAME_HEIGHT, cap_height)
 
     # Model load #############################################################
-    model = YOLO('yolov8n.pt') 
+    model = YOLO('yolov8n.pt')
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(
         static_image_mode=use_static_image_mode,
@@ -92,9 +93,9 @@ def main():
     mode = 0
 
     smart_home_entity = "."
-    duration_after_start = 6 # in seconds
+    duration_after_start = 6  # in seconds
     detected_hands = {}  # Dictionary to store the IDs of the hands showing the specific sign
-   
+
     while True:
         fps = cvFpsCalc.get()
 
@@ -114,53 +115,84 @@ def main():
         # Detection implementation #############################################################
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
         image.flags.writeable = False
-        results = model.predict(source=image, classes=0)
+        results = model.predict(source=image, classes=0, show=False, conf=0.8)
         print(results)
         hand_results = hands.process(image)
         image.flags.writeable = True
+        
+        person_boxes = []
+        for r in results:
+            annotator = Annotator(debug_image)
+
+            boxes = r.boxes
+            for box in boxes:
+                b = box.xyxy[0]
+                c = box.cls
+                annotator.box_label(b, model.names[int(c)])
+
+                # Extract the bounding box coordinates
+                xmin, ymin, xmax, ymax = int(b[0]), int(b[1]), int(b[2]), int(b[3])
+
+                # Crop the region of interest (ROI) from the original image
+                roi = image[ymin:ymax, xmin:xmax]
+                #roi = cv.resize(roi, (debug_image.shape[1],debug_image.shape[0]))
+
+                # Append the ROI to the bounding_box_frames list
+                person_boxes.append(roi)
+
+        
 
         # Process detection hand_results #############################################################
         if hand_results.multi_hand_landmarks is not None:
             if len(detected_hands) <= 2:
                 for hand_id, (hand_landmarks, handedness) in enumerate(
-                    zip(hand_results.multi_hand_landmarks, hand_results.multi_handedness)
+                    zip(hand_results.multi_hand_landmarks,
+                        hand_results.multi_handedness)
                 ):
-                    pre_processed_landmark_list = pre_process_landmark(calc_landmark_list(debug_image, hand_landmarks))
-                    hand_sign_class = keypoint_classifier_labels[keypoint_classifier(pre_processed_landmark_list)]
+                    pre_processed_landmark_list = pre_process_landmark(
+                        calc_landmark_list(debug_image, hand_landmarks))
+                    hand_sign_class = keypoint_classifier_labels[keypoint_classifier(
+                        pre_processed_landmark_list)]
                     if hand_sign_class == "Shaka":
-                        detected_hands[hand_id] = time.time() # Store the ID of the hand showing the "Shaka" sign
+                        # Store the ID of the hand showing the "Shaka" sign
+                        detected_hands[hand_id] = time.time()
                         break
 
             if len(detected_hands) != 0:
                 for hand_id, (hand_landmarks, handedness) in enumerate(
-                    zip(hand_results.multi_hand_landmarks, hand_results.multi_handedness)
+                    zip(hand_results.multi_hand_landmarks,
+                        hand_results.multi_handedness)
                 ):
-                    if hand_id in detected_hands and (time.time() - detected_hands[hand_id] <= duration_after_start):  # Process only the hands that showed the "Shaka" sign
+                    # Process only the hands that showed the "Shaka" sign
+                    if hand_id in detected_hands and (time.time() - detected_hands[hand_id] <= duration_after_start):
                         # Which hand side
                         hand_side = handedness.classification[0].label[0:]
                         # Bounding box calculation
                         brect = calc_bounding_rect(debug_image, hand_landmarks)
                         # Landmark calculation
-                        landmark_list = calc_landmark_list(debug_image, hand_landmarks)
+                        landmark_list = calc_landmark_list(
+                            debug_image, hand_landmarks)
                         # Conversion to relative coordinates / normalized coordinates
-                        pre_processed_landmark_list = pre_process_landmark(landmark_list)
+                        pre_processed_landmark_list = pre_process_landmark(
+                            landmark_list)
                         # Write to the dataset file
                         logging_csv(number, mode, pre_processed_landmark_list)
                         # Hand sign classification
-                        hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
+                        hand_sign_id = keypoint_classifier(
+                            pre_processed_landmark_list)
                         hand_sign_class = keypoint_classifier_labels[hand_sign_id]
                         # Drawing part
-                        debug_image = draw_bounding_rect(use_brect, debug_image, brect)
-                        debug_image = draw_landmarks(debug_image, landmark_list)
+                        debug_image = draw_bounding_rect(
+                            use_brect, debug_image, brect)
+                        debug_image = draw_landmarks(
+                            debug_image, landmark_list)
                         debug_image = draw_info_text(
                             debug_image,
                             brect,
                             hand_side,
                             hand_sign_class,
                         )
-                        if hand_sign_class == "Zero":
-                            smart_home_entity = smart_home_devices[0]
-                        elif hand_sign_class == "One":
+                        if hand_sign_class == "One":
                             smart_home_entity = smart_home_devices[1]
                         elif hand_sign_class == "Two":
                             smart_home_entity = smart_home_devices[2]
@@ -170,8 +202,9 @@ def main():
                             smart_home_entity = smart_home_devices[4]
                         elif hand_sign_class == "Five":
                             smart_home_entity = smart_home_devices[5]
-                        
-                        custom_perfom_action(hand_sign_class, smart_home_entity, debug_image, landmark_list, brect)
+
+                        custom_perfom_action(
+                            hand_sign_class, smart_home_entity, debug_image, landmark_list, brect)
 
                     elif hand_id in detected_hands and (time.time() - detected_hands[hand_id] > duration_after_start):
                         del detected_hands[hand_id]
@@ -185,6 +218,7 @@ def main():
     cap.release()
     cv.destroyAllWindows()
 
+
 def custom_perfom_action(hand_sign_class, smart_home_entity, debug_image, landmark_list, brect):
     args = get_args()
     homeassistant_url = args.homeassistant_url
@@ -192,52 +226,76 @@ def custom_perfom_action(hand_sign_class, smart_home_entity, debug_image, landma
     smart_home_domain = re.match(r"^(.*?)\.", smart_home_entity).group(1)
 
     homeassistant_api_turnon = homeassistant_url+"api/services/homeassistant/turn_on"
-    homeassistant_api_turnoff = homeassistant_url+"api/services/homeassistant/turn_off"
-    homeassistant_api_playmedia = homeassistant_url+"api/services/media_player/play_media"
+    homeassistant_api_turnoff = homeassistant_url + \
+        "api/services/homeassistant/turn_off"
+    homeassistant_api_playmedia = homeassistant_url + \
+        "api/services/media_player/play_media"
     if hand_sign_class == "ThumpUp":
         if smart_home_domain == "light" or smart_home_domain == "vacuum" or smart_home_domain == "select":
             data = {"entity_id": smart_home_entity}
-            post(homeassistant_api_turnon, headers=homeassistant_header, json=data)
+            post(homeassistant_api_turnon,
+                 headers=homeassistant_header, json=data)
         elif smart_home_domain == "media_player":
-            data = {"entity_id": smart_home_entity, "media_content_id": "Start", "media_content_type": "custom"}
-            post(homeassistant_api_playmedia, headers=homeassistant_header, json=data)
+            data = {"entity_id": smart_home_entity,
+                    "media_content_id": "Start", "media_content_type": "custom"}
+            post(homeassistant_api_playmedia,
+                 headers=homeassistant_header, json=data)
     elif hand_sign_class == "ThumpDown":
         if smart_home_domain == "light" or smart_home_domain == "vacuum" or smart_home_domain == "select":
             data = {"entity_id": smart_home_entity}
-            post(homeassistant_api_turnoff, headers=homeassistant_header, json=data)
+            post(homeassistant_api_turnoff,
+                 headers=homeassistant_header, json=data)
         elif smart_home_domain == "media_player":
-            data = {"entity_id": smart_home_entity, "media_content_id": "Stop", "media_content_type": "custom"}
-            post(homeassistant_api_playmedia, headers=homeassistant_header, json=data)
+            data = {"entity_id": smart_home_entity,
+                    "media_content_id": "Stop", "media_content_type": "custom"}
+            post(homeassistant_api_playmedia,
+                 headers=homeassistant_header, json=data)
     elif hand_sign_class == "Control":
-        length, pointCoordinates = calc_finger_distance(landmark_list, brect, 4, 8) #thumbs to index finger
-        debug_image = draw_distance(debug_image, length, pointCoordinates, [255,0,255], False)
-        if not calc_finger_up(landmark_list, 18, 20): #little finger
-            debug_image = draw_distance(debug_image, length, pointCoordinates, [0,255,0], True)
+        length, pointCoordinates = calc_finger_distance(
+            landmark_list, brect, 4, 8)  # thumbs to index finger
+        debug_image = draw_distance(
+            debug_image, length, pointCoordinates, [255, 0, 255], False)
+        if not calc_finger_up(landmark_list, 18, 20):  # little finger
+            debug_image = draw_distance(
+                debug_image, length, pointCoordinates, [0, 255, 0], True)
             if smart_home_domain == "light":
-                brightness = int(np.interp(length, [0.15, 0.85], [1, 254])) # Hand range 0.15-0.85 || Brightness range 1-254
-                data = {"entity_id": smart_home_entity, "brightness": brightness}
-                post(homeassistant_api_turnon, headers=homeassistant_header, json=data)
+                # Hand range 0.15-0.85 || Brightness range 1-254
+                brightness = int(np.interp(length, [0.15, 0.85], [1, 254]))
+                data = {"entity_id": smart_home_entity,
+                        "brightness": brightness}
+                post(homeassistant_api_turnon,
+                     headers=homeassistant_header, json=data)
             elif smart_home_domain == "media_player":
-                volume = np.interp(length, [0.15, 0.85], [0.0, 1.0]) # Hand range 0.15-0.85 || Volume range 0.0 - 1.0
+                # Hand range 0.15-0.85 || Volume range 0.0 - 1.0
+                volume = np.interp(length, [0.15, 0.85], [0.0, 1.0])
                 api = homeassistant_url+"api/services/media_player/volume_set"
                 data = {"entity_id": smart_home_entity, "volume_level": volume}
                 post(api, headers=homeassistant_header, json=data)
     elif hand_sign_class == "Rock":
-        if not calc_finger_up(landmark_list, 6, 8): #index finger
+        if not calc_finger_up(landmark_list, 6, 8):  # index finger
             if smart_home_domain == "light":
                 random_rgb = [random.randint(0, 255) for _ in range(3)]
-                data = {"entity_id": smart_home_entity, "rgb_color": random_rgb}
-                post(homeassistant_api_turnon, headers=homeassistant_header, json=data)
+                data = {"entity_id": smart_home_entity,
+                        "rgb_color": random_rgb}
+                post(homeassistant_api_turnon,
+                     headers=homeassistant_header, json=data)
             elif smart_home_domain == "media_player":
-                data = {"entity_id": smart_home_entity, "media_content_id": "Next", "media_content_type": "custom"}
-                post(homeassistant_api_playmedia, headers=homeassistant_header, json=data)
-        elif not calc_finger_up(landmark_list, 18, 20): #little finger
+                data = {"entity_id": smart_home_entity,
+                        "media_content_id": "Next", "media_content_type": "custom"}
+                post(homeassistant_api_playmedia,
+                     headers=homeassistant_header, json=data)
+        elif not calc_finger_up(landmark_list, 18, 20):  # little finger
             if smart_home_domain == "light":
-                data = {"entity_id": smart_home_entity, "rgb_color": [255,255,255]}
-                post(homeassistant_api_turnon, headers=homeassistant_header, json=data)
+                data = {"entity_id": smart_home_entity,
+                        "rgb_color": [255, 255, 255]}
+                post(homeassistant_api_turnon,
+                     headers=homeassistant_header, json=data)
             elif smart_home_domain == "media_player":
-                data = {"entity_id": smart_home_entity, "media_content_id": "Previous", "media_content_type": "custom"}
-                post(homeassistant_api_playmedia, headers=homeassistant_header, json=data)
+                data = {"entity_id": smart_home_entity,
+                        "media_content_id": "Previous", "media_content_type": "custom"}
+                post(homeassistant_api_playmedia,
+                     headers=homeassistant_header, json=data)
+
 
 def select_mode(key, mode):
     number = -1
@@ -250,6 +308,7 @@ def select_mode(key, mode):
     if key == 104:  # h
         mode = 2
     return number, mode
+
 
 def calc_bounding_rect(image, landmarks):
     image_width, image_height = image.shape[1], image.shape[0]
@@ -268,6 +327,7 @@ def calc_bounding_rect(image, landmarks):
 
     return [x, y, x + w, y + h]
 
+
 def calc_landmark_list(image, landmarks):
     image_width, image_height = image.shape[1], image.shape[0]
 
@@ -282,6 +342,7 @@ def calc_landmark_list(image, landmarks):
         landmark_point.append([landmark_x, landmark_y])
 
     return landmark_point
+
 
 def calc_finger_distance(landmarks, brect, f1, f2):
     x1, y1 = landmarks[f1][0], landmarks[f1][1]
@@ -298,6 +359,7 @@ def calc_finger_distance(landmarks, brect, f1, f2):
     length = math.hypot(x2_norm - x1_norm, y2_norm - y1_norm)
     return length, [x1, y1, x2, y2, cx, cy]
 
+
 def calc_finger_up(landmarks, f1, f2):
     y1, y2 = landmarks[f1][1], landmarks[f2][1]
     try:
@@ -307,6 +369,7 @@ def calc_finger_up(landmarks, f1, f2):
             return False
     except:
         return "NO HAND FOUND"
+
 
 def pre_process_landmark(landmark_list):
     temp_landmark_list = copy.deepcopy(landmark_list)
@@ -345,27 +408,35 @@ def logging_csv(number, mode, landmark_list):
             writer.writerow([number, *landmark_list])
     return
 
+
 def draw_distance(image, length, pointCoordinates, rgb, isSet):
-    if pointCoordinates[0]!=0 and pointCoordinates[1]!=0:
-        cv.circle(image, (pointCoordinates[0], pointCoordinates[1]), 10, (rgb[0], rgb[1], rgb[2]), cv.FILLED)
-    if pointCoordinates[2]!=0 and pointCoordinates[3]!=0:
-        cv.circle(image, (pointCoordinates[2], pointCoordinates[3]), 10, (rgb[0], rgb[1], rgb[2]), cv.FILLED)
-    if pointCoordinates[4]!=0 and pointCoordinates[5]!=0:
-        cv.circle(image, (pointCoordinates[4], pointCoordinates[5]), 10, (rgb[0], rgb[1], rgb[2]), cv.FILLED)
-    if pointCoordinates[0]!=0 and pointCoordinates[1]!=0 and pointCoordinates[2]!=0 and pointCoordinates[3]!=0:
-        cv.line(image, (pointCoordinates[0], pointCoordinates[1]), (pointCoordinates[2], pointCoordinates[3]), (rgb[0], rgb[1], rgb[2]), 3)
-    lengthBar = int(np.interp(length, [0.15, 0.85], [400,150]))
+    if pointCoordinates[0] != 0 and pointCoordinates[1] != 0:
+        cv.circle(image, (pointCoordinates[0], pointCoordinates[1]),
+                  10, (rgb[0], rgb[1], rgb[2]), cv.FILLED)
+    if pointCoordinates[2] != 0 and pointCoordinates[3] != 0:
+        cv.circle(image, (pointCoordinates[2], pointCoordinates[3]),
+                  10, (rgb[0], rgb[1], rgb[2]), cv.FILLED)
+    if pointCoordinates[4] != 0 and pointCoordinates[5] != 0:
+        cv.circle(image, (pointCoordinates[4], pointCoordinates[5]),
+                  10, (rgb[0], rgb[1], rgb[2]), cv.FILLED)
+    if pointCoordinates[0] != 0 and pointCoordinates[1] != 0 and pointCoordinates[2] != 0 and pointCoordinates[3] != 0:
+        cv.line(image, (pointCoordinates[0], pointCoordinates[1]), (
+            pointCoordinates[2], pointCoordinates[3]), (rgb[0], rgb[1], rgb[2]), 3)
+    lengthBar = int(np.interp(length, [0.15, 0.85], [400, 150]))
     smoothness = 5
-    lengthPer = smoothness * round(int(np.interp(length, [0.15, 0.85], [0, 100]))/smoothness)
+    lengthPer = smoothness * \
+        round(int(np.interp(length, [0.15, 0.85], [0, 100]))/smoothness)
     if isSet == True:
-        rgb = [0,255,0]
+        rgb = [0, 255, 0]
     else:
-        rgb = [255,0,0]
-    cv.rectangle(image, (50,150), (85,400), (rgb[0], rgb[1], rgb[2]), 3)
-    cv.rectangle(image, (50, int(lengthBar)), (85,400), (rgb[0], rgb[1], rgb[2]), cv.FILLED)
+        rgb = [255, 0, 0]
+    cv.rectangle(image, (50, 150), (85, 400), (rgb[0], rgb[1], rgb[2]), 3)
+    cv.rectangle(image, (50, int(lengthBar)), (85, 400),
+                 (rgb[0], rgb[1], rgb[2]), cv.FILLED)
     cv.putText(image, f'{int(lengthPer)}%', (40, 450), cv.FONT_HERSHEY_COMPLEX,
                1, (rgb[0], rgb[1], rgb[2]), 3)
     return image
+
 
 def draw_landmarks(image, landmark_point):
     if len(landmark_point) > 0:
