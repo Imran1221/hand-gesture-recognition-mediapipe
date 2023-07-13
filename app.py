@@ -69,10 +69,15 @@ def main():
 
     # Model load #############################################################
     model = YOLO('yolov8n.pt')
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(
+    hands = mp.solutions.hands.Hands(
         static_image_mode=use_static_image_mode,
         max_num_hands=max_num_hands,
+        min_detection_confidence=min_detection_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+    )
+    
+    pose = mp.solutions.pose.Pose(
+        static_image_mode=use_static_image_mode,
         min_detection_confidence=min_detection_confidence,
         min_tracking_confidence=min_tracking_confidence,
     )
@@ -112,15 +117,14 @@ def main():
         image = cv.flip(image, 1)  # Mirror display
         debug_image = copy.deepcopy(image)
 
+
         # Detection implementation #############################################################
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
         image.flags.writeable = False
         results = model.predict(source=image, classes=0, show=False, conf=0.8)
-        print(results)
         hand_results = hands.process(image)
         image.flags.writeable = True
         
-        person_boxes = []
         for r in results:
             annotator = Annotator(debug_image)
 
@@ -134,12 +138,17 @@ def main():
                 xmin, ymin, xmax, ymax = int(b[0]), int(b[1]), int(b[2]), int(b[3])
 
                 # Crop the region of interest (ROI) from the original image
-                roi = image[ymin:ymax, xmin:xmax]
-                #roi = cv.resize(roi, (debug_image.shape[1],debug_image.shape[0]))
+                person = image[ymin:ymax, xmin:xmax]
+                person = cv.resize(person, (debug_image.shape[1],debug_image.shape[0]))
 
-                # Append the ROI to the bounding_box_frames list
-                person_boxes.append(roi)
+                if True:
 
+                    pose_results = pose.process(person)
+                    if pose_results.pose_landmarks:
+                        mp.solutions.drawing_utils.draw_landmarks(person, pose_results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
+                        debug_image = person
+                else:
+                    continue
         
 
         # Process detection hand_results #############################################################
