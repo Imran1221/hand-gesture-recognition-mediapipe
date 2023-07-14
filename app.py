@@ -20,6 +20,8 @@ from requests import post
 from utils import CvFpsCalc
 from model import KeyPointClassifier
 from ultralytics.yolo.utils.plotting import Annotator
+from supervision.draw.color import ColorPalette
+from supervision.tools.detections import Detections, BoxAnnotator
 
 
 def get_args():
@@ -121,34 +123,21 @@ def main():
         # Detection implementation #############################################################
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
         image.flags.writeable = False
-        results = model.predict(source=image, classes=0, show=False, conf=0.8)
+        person_results = model.predict(source=image, classes=0, show=False, conf=0.8)
         hand_results = hands.process(image)
         image.flags.writeable = True
         
-        for r in results:
-            annotator = Annotator(debug_image)
+        debug_image = plot_bboxes(person_results, debug_image)
 
-            boxes = r.boxes
-            for box in boxes:
-                b = box.xyxy[0]
-                c = box.cls
-                annotator.box_label(b, model.names[int(c)])
 
-                # Extract the bounding box coordinates
-                xmin, ymin, xmax, ymax = int(b[0]), int(b[1]), int(b[2]), int(b[3])
+        # # Crop the region of interest (ROI) from the original image
+        # person = image[ymin:ymax, xmin:xmax]
+        # person = cv.resize(person, (debug_image.shape[1],debug_image.shape[0]))
 
-                # Crop the region of interest (ROI) from the original image
-                person = image[ymin:ymax, xmin:xmax]
-                person = cv.resize(person, (debug_image.shape[1],debug_image.shape[0]))
-
-                if True:
-
-                    pose_results = pose.process(person)
-                    if pose_results.pose_landmarks:
-                        mp.solutions.drawing_utils.draw_landmarks(person, pose_results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
-                        debug_image = person
-                else:
-                    continue
+        # pose_results = pose.process(person)
+        # if pose_results.pose_landmarks:
+        #     mp.solutions.drawing_utils.draw_landmarks(person, pose_results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
+        #     debug_image = person
         
 
         # Process detection hand_results #############################################################
@@ -227,6 +216,34 @@ def main():
     cap.release()
     cv.destroyAllWindows()
 
+def plot_bboxes(results, frame):
+    xyxys = []
+    confidences = []
+    class_ids = []
+    i=0
+    # Extract detections for person class
+    for result in results[0]:
+        xyxys.append(result.boxes.xyxy.cpu().numpy())
+        confidences.append(result.boxes.conf.cpu().numpy())
+        class_ids.append(result.boxes.cls.cpu().numpy().astype(int))
+
+        xmin, ymin, xmax, ymax = result.boxes.xyxy.cpu().numpy()[0][0], result.boxes.xyxy.cpu().numpy()[0][1], result.boxes.xyxy.cpu().numpy()[0][2], result.boxes.xyxy.cpu().numpy()[0][3]
+
+        # Crop the region of interest (ROI) from the original image
+        person = frame[ymin:ymax, xmin:xmax]
+        # person = cv.resize(person, (debug_image.shape[1],debug_image.shape[0]))
+        # Speichere das Teilbild als eigenes Bild
+        cv.imwrite(f"person_{i}.jpg", person)
+        i = i+1
+    # Setup detections for visualization
+    detections = Detections(
+                xyxy=results[0].boxes.xyxy.cpu().numpy(),
+                confidence=results[0].boxes.conf.cpu().numpy(),
+                class_id=results[0].boxes.cls.cpu().numpy().astype(int),
+                )
+    
+    frame = BoxAnnotator(color=ColorPalette(), thickness=2, text_thickness=2, text_scale=1.0).annotate(frame=frame, detections=detections, labels="Person")
+    return frame
 
 def custom_perfom_action(hand_sign_class, smart_home_entity, debug_image, landmark_list, brect):
     args = get_args()
