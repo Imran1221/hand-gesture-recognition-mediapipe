@@ -124,9 +124,7 @@ def main():
         person_results = person_model.predict(source=image, classes=0, show=False, conf=0.8)
         hand_results = hands.process(image)
         image.flags.writeable = True
-        for r in person_results:
-             
-            debug_image = plot_bboxes(r, debug_image, pose)
+        debug_image = plot_bboxes(person_results, debug_image, pose)
         
 
         # Process detection hand_results #############################################################
@@ -205,25 +203,26 @@ def main():
     cap.release()
     cv.destroyAllWindows()
 
-def plot_bboxes(r, debug_image, pose):
-    annotator = Annotator(debug_image)
+def plot_bboxes(results, debug_image, pose):
+    for r in results:
+        annotator = Annotator(debug_image)
 
-    boxes = r.boxes
-    for box in boxes:
-        b = box.xyxy[0]
-        c = box.cls
-        annotator.box_label(b, "Person")
+        boxes = r.boxes
+        for box in boxes:
+            b = box.xyxy[0]
+            c = box.cls
+            annotator.box_label(b, "Person")
 
-        # Extract the bounding box coordinates
-        xmin, ymin, xmax, ymax = int(b[0]), int(b[1]), int(b[2]), int(b[3])
+            # Extract the bounding box coordinates
+            xmin, ymin, xmax, ymax = int(b[0]), int(b[1]), int(b[2]), int(b[3])
 
-        # Crop the region of interest (ROI) from the original image
-        person = debug_image[ymin:ymax, xmin:xmax]
-        # person = cv.resize(person, (debug_image.shape[1],debug_image.shape[0]))
-        pose_results = pose.process(person)
-        if pose_results.pose_landmarks:
-            mp.solutions.drawing_utils.draw_landmarks(person, pose_results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
-        cv.imwrite(f"person_1.jpg", person)
+            # Crop the region of interest (ROI) from the original image
+            person = debug_image[ymin:ymax, xmin:xmax]
+            # person = cv.resize(person, (debug_image.shape[1],debug_image.shape[0]))
+            pose_results = pose.process(person)
+            if pose_results.pose_landmarks:
+                mp.solutions.drawing_utils.draw_landmarks(person, pose_results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
+            cv.imwrite(f"person_1.jpg", person)
     return debug_image
 
 def custom_perfom_action(hand_sign_class, smart_home_entity, debug_image, landmark_list, brect):
