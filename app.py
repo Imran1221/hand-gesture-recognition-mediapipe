@@ -37,11 +37,11 @@ def get_args():
     parser.add_argument("--max_num_hands", type=int, default=10)
     parser.add_argument("--use_brect", type=bool, default=True)
     parser.add_argument("--homeassistant_url", type=str,
-                        default='http://192.168.178.118:8123/')
+                        default='http://homeassistant.local:8123/')
     parser.add_argument("--homeassistant_header", type=dict, default={
                         "Authorization": "Bearer <TOKEN>"})
     parser.add_argument("--smart_home_devices", type=list, default=["vacuum.ntelifamilyrobot", "light.deckenlampe", "light.haso_bett_led",
-                        "media_player.imrans_echo_dot", "light.flur", "select.siemens_ti9555x1de_68a40e325683_bsh_common_setting_powerstate"])
+                        "light.imran_bett_led", "media_player.imrans_echo_dot", "select.siemens_ti9555x1de_68a40e325683_bsh_common_setting_powerstate"])
 
     args = parser.parse_args()
 
